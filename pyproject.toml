@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "opaque-registry"
+version = "0.1.0"
+description = "ÖbEngine Package Registry"
+authors = ["Sygmei <3835355+Sygmei@users.noreply.github.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "opaque_registry"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.98.0"
+sqlalchemy = {extras = ["asyncio"], version = "^2.0.17"}
+uvicorn = "^0.22.0"
+psycopg = {extras = ["binary"], version = "^3.1.9"}
+alembic = "^1.11.1"
+
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.3.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
