@@ -1,17 +1,15 @@
 import asyncio
 
-from fastapi import Depends, FastAPI
-from sqlalchemy.ext.asyncio import AsyncSession
 import uvicorn
+from fastapi import Depends, FastAPI
 
-from opaque_registry.routes import ROUTERS
+from opaque_registry.api.routes import load_routers
 
 asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 app = FastAPI()
 
-for router in ROUTERS.values():
-    app.include_router(router)
+load_routers(app=app)
 
 
 if __name__ == "__main__":
