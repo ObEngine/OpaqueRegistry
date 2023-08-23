@@ -3,6 +3,7 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from opaque_registry.database.models.base import Base
+from opaque_registry.database.models.shards import Shard
 
 
 class Package(Base):
@@ -14,6 +15,7 @@ class Package(Base):
     versions: Mapped[list["PackageVersion"]] = relationship("PackageVersion")
     tags_relationship: Mapped[list["PackageTag"]] = relationship(lazy="selectin")
     meta: Mapped[bool] = mapped_column(nullable=False, default=False)
+    shard_id: Mapped[int] = mapped_column(ForeignKey(Shard.id), nullable=False)
 
     @hybrid_property
     def tags(self) -> list[str]:

@@ -16,6 +16,8 @@ psycopg = {extras = ["binary"], version = "^3.1.9"}
 alembic = "^1.11.1"
 semver = "^3.0.1"
 celery = "^5.3.1"
+msgpack = "^1.0.5"
+boto3 = "^1.28.15"
 
 
 [tool.poetry.group.dev.dependencies]
