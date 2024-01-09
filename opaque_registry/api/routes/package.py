@@ -29,8 +29,6 @@ async def get_package_by_id(
     package = await package_service.get_package_by_id(
         db_session=db_session, package_id=package_id
     )
-    if package is None:
-        raise PackageNotFoundError(package_id=package_id)
     return package
 
 

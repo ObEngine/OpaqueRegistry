@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 
 from opaque_registry.api.routes.package import router as package_router
 

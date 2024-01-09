@@ -8,3 +8,4 @@ class Shard(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
     location: Mapped[str] = mapped_column(nullable=False)
+    generation: Mapped[int] = mapped_column(nullable=False, default=0)

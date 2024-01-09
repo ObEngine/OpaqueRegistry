@@ -35,6 +35,7 @@ class PackageVersion(Base):
     package_id: Mapped[str] = mapped_column(ForeignKey(Package.id), primary_key=True)
     version: Mapped[str] = mapped_column(primary_key=True)
     url: Mapped[str] = mapped_column(nullable=False)
+    published: Mapped[bool] = mapped_column(nullable=False, default=False)
 
 
 class PackageVersionDependency(Base):

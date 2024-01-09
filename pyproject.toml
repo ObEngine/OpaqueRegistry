@@ -18,6 +18,8 @@ semver = "^3.0.1"
 celery = "^5.3.1"
 msgpack = "^1.0.5"
 boto3 = "^1.28.15"
+redis = "^5.0.0"
+sherlock = "^0.4.1"
 
 
 [tool.poetry.group.dev.dependencies]

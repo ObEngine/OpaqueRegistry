@@ -1,0 +1,210 @@
+import hashlib
+import json
+import os
+import time
+from enum import Enum
+
+import boto3
+import celery
+import msgpack
+import redis
+from sqlalchemy import select
+
+import opaque_registry.database.models as db_models
+from opaque_registry.async_tasks.utils.redis_lock import RedisLock
+from opaque_registry.celery_app import celery_app
+from opaque_registry.database.connector import (
+    create_sync_db_sessionmaker,
+    init_sync_db_engine,
+)
+
+OBJECT_STORAGE_REGION = os.getenv("OBJECT_STORAGE_REGION", "fra1")
+OBJECT_STORAGE_BUCKET = os.getenv("OBJECT_STORAGE_BUCKET", "obengine-packages")
+OBJECT_STORAGE_KEY = os.getenv("OBJECT_STORAGE_KEY")
+OBJECT_STORAGE_SECRET = os.getenv("OBJECT_STORAGE_SECRET")
+
+# timeouts in seconds
+SHARD_GEN_TIMEOUT = 3600
+SHARD_PUBLISH_TIMEOUT = 120
+
+redis_client = redis.from_url(url=os.getenv("CELERY_BROKER_URL"))
+
+shard_publish_lock = RedisLock(
+    client=redis_client, lock_name="shard_publish_lock", timeout=SHARD_PUBLISH_TIMEOUT
+)
+shard_publish_next_lock = RedisLock(
+    client=redis_client,
+    lock_name="shard_publish_lock_next",
+    timeout=SHARD_PUBLISH_TIMEOUT + 10,
+)
+
+SHARDS_PREFIX = "shards"
+
+
+def get_s3_config():
+    return {
+        "region_name": OBJECT_STORAGE_REGION,
+        "endpoint_url": "https://{}.digitaloceanspaces.com".format(
+            OBJECT_STORAGE_REGION
+        ),
+        "aws_access_key_id": OBJECT_STORAGE_KEY,
+        "aws_secret_access_key": OBJECT_STORAGE_SECRET,
+    }
+
+
+def upload_to_s3(data: bytes, key: str):
+    if OBJECT_STORAGE_KEY is None or OBJECT_STORAGE_SECRET is None:
+        raise RuntimeError(
+            "OBJECT_STORAGE_KEY or OBJECT_STORAGE_SECRET environment variables are not set"
+        )
+    s3config = get_s3_config()
+
+    # Initializing S3.ServiceResource object - http://boto3.readthedocs.io/en/latest/reference/services/s3.html#service-resource
+    s3resource = boto3.resource("s3", **s3config)
+    s3client = boto3.client("s3", **s3config)
+
+    for bucket in s3resource.buckets.all():
+        print(bucket)
+
+    s3object = s3resource.Bucket(OBJECT_STORAGE_BUCKET).put_object(Key=key, Body=data)
+    object_url = s3client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": OBJECT_STORAGE_BUCKET, "Key": s3object.key},
+        ExpiresIn=60 * 60,
+    )
+
+
+def list_shards(pending: bool = False, include_hashes: bool = True) -> dict[str, str]:
+    s3config = get_s3_config()
+    s3client = boto3.client("s3", **s3config)
+
+    shards = {}  # shard_id: hash
+    expected_prefix = PENDING_SHARDS_PREFIX if pending else SHARDS_PREFIX
+    list_kwargs = {
+        "Bucket": OBJECT_STORAGE_BUCKET,
+        "Prefix": f"{expected_prefix}/",
+    }
+    for obj in s3client.list_objects_v2(**list_kwargs).get("Contents", []):
+        if obj["Key"].endswith(f"_{SHARDS_HASH_SUFFIX}"):
+            shard_id = int(
+                obj["Key"]
+                .removeprefix(f"{expected_prefix}/")
+                .removesuffix(f"_{SHARDS_HASH_SUFFIX}")
+            )
+            if include_hashes:
+                shards[shard_id] = (
+                    s3client.get_object(Bucket=OBJECT_STORAGE_BUCKET, Key=obj["Key"])[
+                        "Body"
+                    ]
+                    .read()
+                    .decode("utf-8")
+                )
+            else:
+                shards[shard_id] = None
+
+    return shards
+
+
+def build_shard_hashfile_from_hashes():
+    pending_shards = list_shards(pending=False)
+    shard_hashfile = {}
+    for shard_id, shard_hash in pending_shards.items():
+        shard_hashfile[shard_id] = shard_hash
+    json_bytes = json.dumps(shard_hashfile).encode("utf-8")
+    upload_to_s3(data=json_bytes, key="shards_hashfile")
+
+
+def apply_pending_shards():
+    s3config = get_s3_config()
+    s3client = boto3.client("s3", **s3config)
+    pending_shards = list_shards(pending=True, include_hashes=False).keys()
+    # replace shard_X_pending with shard_X on Bucket
+    for pending_shard in pending_shards:
+        # Move pending shard to content shard
+        s3client.copy_object(
+            Bucket=OBJECT_STORAGE_BUCKET,
+            CopySource=f"{OBJECT_STORAGE_BUCKET}/{PENDING_SHARDS_PREFIX}/{pending_shard}_{SHARDS_CONTENT_SUFFIX}",
+            Key=f"{SHARDS_PREFIX}/{pending_shard}_{SHARDS_CONTENT_SUFFIX}",
+        )
+        s3client.delete_object(
+            Bucket=OBJECT_STORAGE_BUCKET,
+            Key=f"{PENDING_SHARDS_PREFIX}/{pending_shard}_{SHARDS_CONTENT_SUFFIX}",
+        )
+        # Move pending hash to content hash
+        s3client.copy_object(
+            Bucket=OBJECT_STORAGE_BUCKET,
+            CopySource=f"{OBJECT_STORAGE_BUCKET}/{PENDING_SHARDS_PREFIX}/{pending_shard}_{SHARDS_HASH_SUFFIX}",
+            Key=f"{SHARDS_PREFIX}/{pending_shard}_{SHARDS_HASH_SUFFIX}",
+        )
+        s3client.delete_object(
+            Bucket=OBJECT_STORAGE_BUCKET,
+            Key=f"{PENDING_SHARDS_PREFIX}/{pending_shard}_{SHARDS_HASH_SUFFIX}",
+        )
+    build_shard_hashfile_from_hashes()
+
+
+@celery_app.task(bind=True)
+def create_shard_task(self, shard_id: int):
+    shard_x_lock = RedisLock(
+        client=redis_client, lock_name=f"shard_{shard_id}_lock", timeout=3600
+    )
+    shard_x_next_lock = RedisLock(
+        client=redis_client, lock_name=f"shard_{shard_id}_lock_next", timeout=3600
+    )
+    if not shard_x_lock.acquire(blocking=False):
+        if not shard_x_next_lock.acquire(blocking=False):
+            return
+
+    if shard_x_next_lock.locked():
+        shard_x_next_lock.release()
+    init_sync_db_engine()
+    async_sessionmaker = create_sync_db_sessionmaker()
+    shard_packages = {}
+    with async_sessionmaker() as session:
+        shard_infos = session.execute(
+            select(db_models.Shard).filter_by(id=shard_id)
+        ).scalar_one_or_none()
+        db_packages_on_selected_shard = session.execute(
+            select(db_models.Package).filter_by(shard_id=shard_id, meta=False)
+        )
+
+        for db_package in db_packages_on_selected_shard.scalars().all():
+            shard_packages[db_package.id] = [
+                {
+                    "version": package_version.version,
+                    "url": package_version.url,
+                }
+                for package_version in db_package.versions
+            ]
+
+    msgpack_bytes = msgpack.packb(shard_packages)
+    while True:
+        pending_shards = list_shards(pending=True, include_hashes=False)
+        if shard_id not in pending_shards:
+            break
+        time.sleep(1)
+    upload_to_s3(
+        data=msgpack_bytes,
+        key=f"{SHARDS_PREFIX}/{shard_id}_{SHARDS_CONTENT_SUFFIX}",
+    )
+    # compute shard hash using sha512
+    shard_hash = hashlib.sha512(msgpack_bytes).hexdigest()
+    upload_to_s3(
+        data=shard_hash.encode("utf-8"),
+        key=f"{SHARDS_PREFIX}/{shard_id}_{SHARDS_HASH_SUFFIX}",
+    )
+    publish_all_shards.apply_async()
+    shard_x_lock.release()
+
+
+@celery_app.task
+def publish_all_shards():
+    if not shard_publish_lock.acquire(blocking=False):
+        if not shard_publish_next_lock.acquire(blocking=False):
+            # already scheduled
+            return
+
+    if shard_publish_next_lock.locked():
+        shard_publish_next_lock.release()
+    apply_pending_shards()
+    shard_publish_lock.release()

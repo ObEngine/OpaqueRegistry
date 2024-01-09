@@ -58,6 +58,18 @@ test = ["anyio[trio]", "coverage[toml] (>=4.5)", "hypothesis (>=4.0)", "mock (>=
 trio = ["trio (<0.22)"]
 
 [[package]]
+name = "async-timeout"
+version = "4.0.3"
+description = "Timeout context manager for asyncio programs"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "async-timeout-4.0.3.tar.gz", hash = "sha256:4640d96be84d82d02ed59ea2b7105a0f7b33abe8703703cd0ab0bf87c427522f"},
+    {file = "async_timeout-4.0.3-py3-none-any.whl", hash = "sha256:7405140ff1230c310e51dc27b3145b9092d659ce68ff733fb0cefe3ee42be028"},
+]
+
+[[package]]
 name = "billiard"
 version = "4.1.0"
 description = "Python multiprocessing fork with improvements and bugfixes"
@@ -848,6 +860,25 @@ files = [
 six = ">=1.5"
 
 [[package]]
+name = "redis"
+version = "5.0.0"
+description = "Python client for Redis database and key-value store"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "redis-5.0.0-py3-none-any.whl", hash = "sha256:06570d0b2d84d46c21defc550afbaada381af82f5b83e5b3777600e05d8e2ed0"},
+    {file = "redis-5.0.0.tar.gz", hash = "sha256:5cea6c0d335c9a7332a460ed8729ceabb4d0c489c7285b0a86dbbf8a017bd120"},
+]
+
+[package.dependencies]
+async-timeout = {version = ">=4.0.2", markers = "python_full_version <= \"3.11.2\""}
+
+[package.extras]
+hiredis = ["hiredis (>=1.0.0)"]
+ocsp = ["cryptography (>=36.0.1)", "pyopenssl (==20.0.1)", "requests (>=2.26.0)"]
+
+[[package]]
 name = "s3transfer"
 version = "0.6.1"
 description = "An Amazon S3 Transfer Manager"
@@ -876,6 +907,26 @@ files = [
     {file = "semver-3.0.1-py3-none-any.whl", hash = "sha256:2a23844ba1647362c7490fe3995a86e097bb590d16f0f32dfc383008f19e4cdf"},
     {file = "semver-3.0.1.tar.gz", hash = "sha256:9ec78c5447883c67b97f98c3b6212796708191d22e4ad30f4570f840171cbce1"},
 ]
+
+[[package]]
+name = "sherlock"
+version = "0.4.1"
+description = "Distributed inter-process locks with a choice of backend"
+category = "main"
+optional = false
+python-versions = ">=3.7,<4.0"
+files = [
+    {file = "sherlock-0.4.1-py3-none-any.whl", hash = "sha256:811f1f410b4be035726bf602d00c05d5969534d52158725cd3562ccadd2f7325"},
+    {file = "sherlock-0.4.1.tar.gz", hash = "sha256:e620f498d5e2618005d3b5e08cc34106c1ab09e9c58d4310fc268b011700b6f5"},
+]
+
+[package.extras]
+all = ["filelock (>=3.7.1,<4.0.0)", "kubernetes (>=24.2.0,<25.0.0)", "pylibmc (>=1.6.1,<2.0.0)", "redis (>=4.3.4,<5.0.0)"]
+etcd = ["python-etcd (>=0.4.5,<0.5.0)"]
+filelock = ["filelock (>=3.7.1,<4.0.0)"]
+kubernetes = ["kubernetes (>=24.2.0,<25.0.0)"]
+memcached = ["pylibmc (>=1.6.1,<2.0.0)"]
+redis = ["redis (>=4.3.4,<5.0.0)"]
 
 [[package]]
 name = "six"
@@ -1097,4 +1148,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "3551ecbcd62b0a0c6abcf8e276ba1d9cd167f8c26d10935a5e48aca127850bcd"
+content-hash = "e858af7612abbf72f2ce0dfe5197a9ab9a29bf138c1930d42f16a45080c2b077"

@@ -19,4 +19,4 @@ def derive_shard_id_from_package_id(package_id: str, shard_count: int) -> int:
 
 
 async def get_shard_count(db_session: AsyncSession) -> int:
-    await db_session.scalar(select(func.count()).select_from(db_models.Shard))
+    return await db_session.scalar(select(func.count()).select_from(db_models.Shard))
